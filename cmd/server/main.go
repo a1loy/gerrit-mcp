@@ -3,12 +3,13 @@ package main
 import (
 	"flag"
 	"fmt"
-	"gerrit-mcp/internal/logger"
-	"gerrit-mcp/internal/gerrit"
+	"gerrit-mcp/internal/logger"	
 	"gerrit-mcp/pkg/mcp"
 	"os"
 	"os/signal"
 	"syscall"
+	"context"
+	"github.com/andygrunwald/go-gerrit"
 )
 
 const (
@@ -26,7 +27,11 @@ func main() {
 	logger.Debugf("Starting Gerrit MCP server on %s", host)
 	logger.Debugf("Gerrit instance: %s", *gerritInstance)
 
-	gerritClient := gerrit.NewClient(*gerritInstance)
+	ctx := context.Background()
+	gerritClient, err := gerrit.NewClient(ctx, *gerritInstance, nil)
+	if err != nil {
+		logger.Fatalf("Failed to create Gerrit client: %v", err)
+	}
 	mcpServer := mcp.NewServer(mcp.WithGerritClient(gerritClient))
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
