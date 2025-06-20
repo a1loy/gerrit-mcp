@@ -5,6 +5,9 @@ import (
 	"strings"
 	"fmt"
 	"regexp"
+	"context"
+	"gerrit-mcp/internal/logger"
+	"gerrit-mcp/internal/util"
 
 	"github.com/andygrunwald/go-gerrit"
 )
@@ -59,6 +62,48 @@ func NewGerritChange(changeInfo *gerrit.ChangeInfo, diffsInfo []*gerrit.DiffInfo
 		Subject: changeInfo.Subject, Project: changeInfo.Project,
 		DiffMap: diffMap,
 		URL:     extractChangeId(changeInfo.ChangeID, endpointURL)}, nil
+}
+
+func BuildGerritChanges(ctx context.Context, gerritClient *gerrit.Client, changes *[]gerrit.ChangeInfo) ([]GerritChange, error) {
+	gerritChanges := make([]GerritChange, 0)
+	for _, curChange := range *changes {
+		logger.Debugf("processing %s %s", curChange.ID, curChange.Subject)
+		revision := curChange.CurrentRevision
+		if revision == "" {
+			revision = "current"
+		}
+		unfilteredFiles, _, rerr := gerritClient.Changes.ListFiles(ctx, curChange.ID, revision, &gerrit.FilesOptions{})
+		if rerr != nil {
+			// panic(rerr)
+			logger.Errorf("%v", rerr)
+			continue
+		}
+		files := util.FilterFiles(unfilteredFiles)
+		logger.Debugf("filtered files count %d\n", len(files))
+		// TODO: move to ShouldSkipChange
+		if len(files) > 32 || len(files) == 0 {
+			continue
+		}
+		logger.Debugf("moving with %s\n", strings.Join(files, "\n"))
+		diffs := make([]*gerrit.DiffInfo, 0)
+		for _, fname := range files {
+			if fname == "/COMMIT_MSG" || fname == "/MERGE_LIST" || fname == "/PATCHSET_LEVEL" {
+				continue
+			}
+			diffInfo, _, diffErr := gerritClient.Changes.GetDiff(ctx, curChange.ID, revision, fname, nil)
+			if diffErr != nil {
+				logger.Errorf("%v", diffErr)
+			}
+			diffs = append(diffs, diffInfo)
+		}
+		u := gerritClient.BaseURL()
+		gerritChange, err := NewGerritChange(&curChange, diffs, u.String())
+		if err != nil {
+			logger.Errorf("%v", err)
+		}
+		gerritChanges = append(gerritChanges, gerritChange)
+	}
+	return gerritChanges, nil
 }
 
 func extractChangeId(rawChangeId string, endpointURL string) string {

@@ -5,7 +5,6 @@ import (
 	"gerrit-mcp/internal/change"
 	"github.com/andygrunwald/go-gerrit"
 	"gerrit-mcp/internal/logger"
-	"gerrit-mcp/internal/util"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/mark3labs/mcp-go/mcp"
 	"context"
@@ -75,9 +74,9 @@ func NewServer(opts ...ServerOption) *Server {
 						"type": "string",
 						"description": "Review URL"
 					},
-					"crbugID": {
+					"trackID": {
 						"type": "number",
-						"description": "crbug ID"
+						"description": "track ID (crbug ID in case of chromium)"
 					}
 				},
 				"required": []
@@ -106,80 +105,42 @@ func (s *Server) ServeSSE(addr string) error {
 
 func (s *Server) handleQueryChange(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	reviewURL := mcp.ParseString(request, "reviewURL", "")
-	crbugID := mcp.ParseInt(request, "crbugID", -1)
+	trackID := mcp.ParseInt(request, "trackID", -1)
 
-	if reviewURL == "" && crbugID == -1 {
-		return nil, fmt.Errorf("either reviewURL or crbugID must be provided")
+	if reviewURL == "" && trackID == -1 {
+		return nil, fmt.Errorf("either reviewURL or trackID must be provided")
 	}
 
 	if reviewURL != "" {
 		return mcp.NewToolResultText("not implemented yet"), nil
 	}
 
-	// if crbugID != -1 {
 	opt := &gerrit.QueryChangeOptions{}
-	opt.Query = []string{fmt.Sprintf("tr:%d", crbugID)}
+	opt.Query = []string{fmt.Sprintf("tr:%d", trackID)}
 	changes, _, err := s.gerritClient.Changes.QueryChanges(ctx, opt)
 	if err != nil {
 		panic(err)
 	}
 	if len(*changes) == 0 {
-		return nil, fmt.Errorf("no change found for crbugID %d", crbugID)
+		return nil, fmt.Errorf("no change found for trackID %d", trackID)
 	}
-	gerritChange := make([]change.GerritChange, 0)
-	for _, curChange := range *changes {
-		logger.Debugf("processing %s %s", curChange.ID, curChange.Subject)
-		revision := curChange.CurrentRevision
-		if revision == "" {
-			revision = "current"
-		}
-		unfilteredFiles, _, rerr := s.gerritClient.Changes.ListFiles(ctx, curChange.ID, revision, &gerrit.FilesOptions{})
-		if rerr != nil {
-			// panic(rerr)
-			logger.Errorf("%v", rerr)
-			continue
-		}
-		files := util.FilterFiles(unfilteredFiles)
-		logger.Debugf("filtered files count %d\n", len(files))
-		// TODO: move to ShouldSkipChange
-		if len(files) > 32 || len(files) == 0 {
-			continue
-		}
-		logger.Debugf("moving with %s\n", strings.Join(files, "\n"))
-		diffs := make([]*gerrit.DiffInfo, 0)
-		for _, fname := range files {
-			if fname == "/COMMIT_MSG" || fname == "/MERGE_LIST" || fname == "/PATCHSET_LEVEL" {
-				continue
-			}
-			diffInfo, _, diffErr := s.gerritClient.Changes.GetDiff(ctx, curChange.ID, revision, fname, nil)
-			if diffErr != nil {
-				logger.Errorf("%v", diffErr)
-			}
-			diffs = append(diffs, diffInfo)
-		}
-		GerritChange, err := change.NewGerritChange(&curChange, diffs, DefaultGerritEndpointURL)
-		if err != nil {
-			logger.Errorf("%v", err)
-		}
-		gerritChange = append(gerritChange, GerritChange)
-		// addErr := GerritChanger.AddChange(&change, diffs)
-		// if addErr != nil {
-		// 	logger.Errorf("%v", addErr)
-		// }
+
+	gerritChanges, err := change.BuildGerritChanges(ctx, s.gerritClient, changes)
+	if err != nil {
+		return nil, err
 	}
-	logger.Debugf("extracted %d changes", len(gerritChange))
+
+	logger.Debugf("extracted %d changes", len(gerritChanges))
 
 	resultBuilder := strings.Builder{}
-	for _, GerritChange := range gerritChange {
-		resultBuilder.WriteString(fmt.Sprintf("%s: %s\nChanged files: %s\n", GerritChange.URL, GerritChange.Subject, 
-			strings.Join(GerritChange.Paths, "\n")))
-		for fname, diff := range GerritChange.DiffMap {
+	for _, gc := range gerritChanges {
+		resultBuilder.WriteString(fmt.Sprintf("%s: %s\nChanged files: %s\n", gc.URL, gc.Subject, 
+			strings.Join(gc.Paths, "\n")))
+		for fname, diff := range gc.DiffMap {
 			resultBuilder.WriteString(fmt.Sprintf("%s:\n%s\n", fname, diff))
 		}
 	}
-
 	return mcp.NewToolResultText(resultBuilder.String()), nil
-	// }
 }
 
 func (s *Server) handleQueryProjects(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
