@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"context"
+	"net/url"
 	"gerrit-mcp/internal/logger"
 	"gerrit-mcp/internal/util"
 
@@ -116,4 +117,25 @@ func extractChangeId(rawChangeId string, endpointURL string) string {
 		return fmt.Sprintf("%s/q/%s", endpointURL, changeId)
 	}
 	return rawChangeId
+}
+
+// example: https://chromium-review.googlesource.com/c/chromium/src/+/4640000
+func ParseGerritURL(reviewURL string) (string, string, string, string, error) {
+	u, err := url.Parse(reviewURL)
+	if err != nil {
+		return "", "", "", "", err
+	}
+	host := u.Hostname()
+	path := u.EscapedPath()
+	parts := strings.Split(path, "/")
+	if len(parts) < 5 {
+		return "", "", "", "", fmt.Errorf("invalid review URL: %s (parts: %v)", reviewURL, parts)
+	}
+	if parts[1] != "c" || parts[4] != "+" {
+		return "", "", "", "", fmt.Errorf("invalid review URL: %s (parts: %v)", reviewURL, parts)
+	}
+	project := parts[1]
+	branch := parts[2]
+	changeNumber := parts[5]
+	return host, project, branch, changeNumber, nil
 }

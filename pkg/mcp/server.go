@@ -111,12 +111,26 @@ func (s *Server) handleQueryChange(ctx context.Context, request mcp.CallToolRequ
 		return nil, fmt.Errorf("either reviewURL or trackID must be provided")
 	}
 
+	opt := &gerrit.QueryChangeOptions{}
 	if reviewURL != "" {
-		return mcp.NewToolResultText("not implemented yet"), nil
+		host, _, _, changeNumber, err := change.ParseGerritURL(reviewURL)
+		if err != nil {
+			return nil, fmt.Errorf("unable to parse review URL: %s: %v", reviewURL, err)
+		}
+		u := s.gerritClient.BaseURL()
+		clientHost := u.Hostname()
+		if clientHost != host {
+			logger.Errorf("host %s from review URL %s is not the same as the host %s from the server", host, reviewURL, clientHost)
+			return nil, fmt.Errorf("review URL is not from the same gerrit instance as the one used to create the server")
+		}
+		if err != nil {
+			return nil, fmt.Errorf("unable to parse review URL: %s", reviewURL)
+		}
+		opt.Query = []string{fmt.Sprintf("change:%s", changeNumber)}
+	} else {
+		opt.Query = []string{fmt.Sprintf("tr:%d", trackID)}
 	}
 
-	opt := &gerrit.QueryChangeOptions{}
-	opt.Query = []string{fmt.Sprintf("tr:%d", trackID)}
 	changes, _, err := s.gerritClient.Changes.QueryChanges(ctx, opt)
 	if err != nil {
 		panic(err)
