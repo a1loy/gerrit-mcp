@@ -9,7 +9,7 @@ import (
 	"net/url"
 	"gerrit-mcp/internal/logger"
 	"gerrit-mcp/internal/util"
-
+	"strconv"
 	"github.com/andygrunwald/go-gerrit"
 )
 
@@ -120,22 +120,40 @@ func extractChangeId(rawChangeId string, endpointURL string) string {
 }
 
 // example: https://chromium-review.googlesource.com/c/chromium/src/+/4640000
-func ParseGerritURL(reviewURL string) (string, string, string, string, error) {
+func BuildQueryFromURL(reviewURL string) (string, error) {
+	// opt := &gerrit.QueryChangeOptions{}
 	u, err := url.Parse(reviewURL)
 	if err != nil {
-		return "", "", "", "", err
+		return "", err
 	}
-	host := u.Hostname()
 	path := u.EscapedPath()
 	parts := strings.Split(path, "/")
-	if len(parts) < 5 {
-		return "", "", "", "", fmt.Errorf("invalid review URL: %s (parts: %v)", reviewURL, parts)
+	if len(parts) < 2 {
+		return "", fmt.Errorf("invalid review URL: %s (parts: %v)", reviewURL, parts)
 	}
-	if parts[1] != "c" || parts[4] != "+" {
-		return "", "", "", "", fmt.Errorf("invalid review URL: %s (parts: %v)", reviewURL, parts)
+	urlType := parts[1]
+	switch urlType {
+	case "q":
+		logger.Debugf("query change URL: %s", reviewURL)
+		changeID := parts[2]
+		return fmt.Sprintf("change:%s", changeID), nil
+		// opt.Query = []string{fmt.Sprintf("change:%s", changeID)}
+	case "c":
+		if len(parts) < 5 {
+			return "", fmt.Errorf("invalid review URL: %s (parts: %v)", reviewURL, parts)
+		}
+		if parts[1] != "c" || parts[4] != "+" {
+			return "", fmt.Errorf("invalid review URL: %s (parts: %v)", reviewURL, parts)
+		}
+		// project := parts[2]
+		// branch := parts[3]
+		changeNumber := parts[5]
+		changeNumberInt, err := strconv.Atoi(changeNumber)
+		if err != nil {
+			return "", fmt.Errorf("invalid change number: %s", changeNumber)
+		}
+		return fmt.Sprintf("change:%d", changeNumberInt), nil
+		// opt.Query = []string{fmt.Sprintf("change:%d", parts[5])}
 	}
-	project := parts[1]
-	branch := parts[2]
-	changeNumber := parts[5]
-	return host, project, branch, changeNumber, nil
+	return "", fmt.Errorf("invalid review URL: %s (parts: %v)", reviewURL, parts)
 }

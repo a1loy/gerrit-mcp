@@ -11,6 +11,7 @@ import (
 	"strings"
 	"fmt"
 	"encoding/json"
+	"net/url"
 )
 
 const (
@@ -113,20 +114,21 @@ func (s *Server) handleQueryChange(ctx context.Context, request mcp.CallToolRequ
 
 	opt := &gerrit.QueryChangeOptions{}
 	if reviewURL != "" {
-		host, _, _, changeNumber, err := change.ParseGerritURL(reviewURL)
+		query, err := change.BuildQueryFromURL(reviewURL)
+		reviewU, _ := url.Parse(reviewURL)
 		if err != nil {
 			return nil, fmt.Errorf("unable to parse review URL: %s: %v", reviewURL, err)
 		}
 		u := s.gerritClient.BaseURL()
 		clientHost := u.Hostname()
-		if clientHost != host {
-			logger.Errorf("host %s from review URL %s is not the same as the host %s from the server", host, reviewURL, clientHost)
+		if clientHost != reviewU.Hostname() {
+			logger.Errorf("host %s from review URL %s is not the same as the host %s from the server", reviewU.Hostname(), reviewURL, clientHost)
 			return nil, fmt.Errorf("review URL is not from the same gerrit instance as the one used to create the server")
 		}
 		if err != nil {
 			return nil, fmt.Errorf("unable to parse review URL: %s", reviewURL)
 		}
-		opt.Query = []string{fmt.Sprintf("change:%s", changeNumber)}
+		opt.Query = []string{query}
 	} else {
 		opt.Query = []string{fmt.Sprintf("tr:%d", trackID)}
 	}
