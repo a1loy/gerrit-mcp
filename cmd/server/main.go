@@ -22,6 +22,7 @@ func main() {
 	port := flag.String("port", DEFAULT_PORT, "Port to listen on")
 	addr := flag.String("addr", DEFAULT_HOST, "Address to listen on")
 	gerritInstance := flag.String("gerrit-instance", DEFAULT_GERRIT_INSTANCE, "Gerrit instance URL")
+	withAuth := flag.String("with-auth", "" , "Use authentication")
 	flag.Parse()
 	host := fmt.Sprintf("%s:%s", *addr, *port)
 	logger.Debugf("Starting Gerrit MCP server on %s", host)
@@ -29,6 +30,35 @@ func main() {
 
 	ctx := context.Background()
 	gerritClient, err := gerrit.NewClient(ctx, *gerritInstance, nil)
+	authMode := *withAuth
+	switch authMode {
+		case "cookie":
+			cookieName := os.Getenv("GERRIT_COOKIE_NAME")
+			cookieValue := os.Getenv("GERRIT_COOKIE_VALUE")
+			if cookieName == "" || cookieValue == "" {
+				logger.Fatalf("GERRIT_COOKIE_NAME and GERRIT_COOKIE_VALUE must be set for cookie authentication")
+			}
+			logger.Infof("Authentication mode: %s with cookie %s", authMode, cookieName)
+			gerritClient.Authentication.SetCookieAuth(cookieName, cookieValue)
+		case "basic":
+			username := os.Getenv("GERRIT_USERNAME")
+			password := os.Getenv("GERRIT_PASSWORD")
+			if username == "" || password == "" {
+				logger.Fatalf("GERRIT_USERNAME and GERRIT_PASSWORD must be set for basic authentication")
+			}
+			logger.Infof("Authentication mode: %s with user %s", authMode, username)
+			gerritClient.Authentication.SetBasicAuth(username, password)
+		case "digest":
+			username := os.Getenv("GERRIT_USERNAME")
+			password := os.Getenv("GERRIT_PASSWORD")
+			if username == "" || password == "" {
+				logger.Fatalf("GERRIT_USERNAME and GERRIT_PASSWORD must be set for digest authentication")
+			}
+			logger.Infof("Authentication mode: %s with user %s", authMode, username)
+			gerritClient.Authentication.SetDigestAuth(username, password)
+		default:
+			logger.Infof("No authentication mode specified, using anonymous access")
+	}
 	if err != nil {
 		logger.Fatalf("Failed to create Gerrit client: %v", err)
 	}
