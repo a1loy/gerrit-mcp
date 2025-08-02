@@ -6,7 +6,7 @@ This project implements an SSE-based MCP server that provides tools for:
 
 1. Quering particular change/review by its number or id
 2. Quering changes for specified project according filters
-3. Quering available project
+3. Quering available projects
 
 ## Usage
 

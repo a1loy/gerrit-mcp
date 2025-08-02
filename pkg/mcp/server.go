@@ -19,6 +19,10 @@ const (
 	ServerVersion = "0.1.0"
 	DefaultGerritEndpointURL = "https://chromium-review.googlesource.com"
 	PROJECT_QUERY_LIMIT = 10
+	CHANGE_QUERY_DEFAULT_AGE_HOURS = 24
+	CHANGE_QUERY_DEFAULT_PROJECT = "chromium/src"
+	CHANGE_QUERY_DEFAULT_STATUS = "open"
+	CHANGE_QUERY_DEFAULT_LIMIT = -1 // unlimited
 )
 
 type Server struct {
@@ -41,6 +45,36 @@ func NewServer(opts ...ServerOption) *Server {
 	}
 
 	mcpServer := server.NewMCPServer(ServerName, ServerVersion)
+
+	mcpServer.AddTool(
+		mcp.NewToolWithRawSchema(
+			"query_changes_by_filter",
+			"Query changes by filter",
+			json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"status": {
+						"type": "string",
+						"description": "Status of the change"
+					},
+					"limit": {
+						"type": "number",
+						"description": "Number of changes to return"
+					},
+					"project": {
+						"type": "string",
+						"description": "Project name"
+					},
+					"age": {
+						"type": "number",
+						"description": "Age of the change in hours"
+					}
+				},
+				"required": []
+			}`),
+		),
+		s.handleQueryChangesByFilter,
+	)
 
 	mcpServer.AddTool(
 		mcp.NewToolWithRawSchema(
@@ -102,6 +136,53 @@ func (s *Server) ServeSSE(addr string) error {
 	logger.Debugf("Starting MCP server (SSE) on %s", addr)
 	sseServer := server.NewSSEServer(s.mcpServer)
 	return sseServer.Start(addr)
+}
+
+func (s *Server) handleQueryChangesByFilter(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	status := mcp.ParseString(request, "status", CHANGE_QUERY_DEFAULT_STATUS)
+	limit := mcp.ParseInt(request, "limit", CHANGE_QUERY_DEFAULT_LIMIT)
+	project := mcp.ParseString(request, "project", CHANGE_QUERY_DEFAULT_PROJECT)
+	age := mcp.ParseInt(request, "age", CHANGE_QUERY_DEFAULT_AGE_HOURS)
+
+	opt := &gerrit.QueryChangeOptions{}
+	queryParts := []string{
+		"status:" + status,
+		"project:" + project,
+	}
+	if age != CHANGE_QUERY_DEFAULT_AGE_HOURS {
+		queryParts = append(queryParts, fmt.Sprintf("age:%d", age))
+	}
+	opt.Query = []string{strings.Join(queryParts, " ")}
+	
+	changes, _, err := s.gerritClient.Changes.QueryChanges(ctx, opt)
+	if err != nil {
+		panic(err)
+	}
+
+	if len(*changes) == 0 {
+		return nil, fmt.Errorf("no change found for query %s", opt.Query[0])
+	}
+
+	gerritChanges, err := change.BuildGerritChanges(ctx, s.gerritClient, changes)
+	if err != nil {
+		return nil, err
+	}
+
+	logger.Debugf("extracted %d changes", len(gerritChanges))
+
+	if limit != CHANGE_QUERY_DEFAULT_LIMIT && len(gerritChanges) > limit {
+		gerritChanges = gerritChanges[:limit]
+	}
+
+	resultBuilder := strings.Builder{}
+	for _, gc := range gerritChanges {
+		resultBuilder.WriteString(fmt.Sprintf("%s: %s\nChanged files: %s\n", gc.URL, gc.Subject, 
+			strings.Join(gc.Paths, "\n")))
+		for fname, diff := range gc.DiffMap {
+			resultBuilder.WriteString(fmt.Sprintf("%s:\n%s\n", fname, diff))
+		}
+	}
+	return mcp.NewToolResultText(resultBuilder.String()), nil
 }
 
 func (s *Server) handleQueryChange(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
