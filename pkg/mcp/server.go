@@ -147,13 +147,19 @@ func (s *Server) handleQueryChangesByFilter(ctx context.Context, request mcp.Cal
 	opt := &gerrit.QueryChangeOptions{}
 	queryParts := []string{
 		"status:" + status,
-		"project:" + project,
+		// "project:" + project,
 	}
+	if project == CHANGE_QUERY_DEFAULT_PROJECT {
+		queryParts = append(queryParts, "project:" + project)
+	} else {
+		queryParts = append(queryParts, "project:" + change.GetCorrectProjectName(ctx, s.gerritClient, project, CHANGE_QUERY_DEFAULT_PROJECT))
+	}
+	
 	if age != CHANGE_QUERY_DEFAULT_AGE_HOURS {
 		queryParts = append(queryParts, fmt.Sprintf("age:%d", age))
 	}
 	opt.Query = []string{strings.Join(queryParts, " ")}
-	
+	opt.Limit = limit
 	changes, _, err := s.gerritClient.Changes.QueryChanges(ctx, opt)
 	if err != nil {
 		panic(err)
@@ -176,11 +182,7 @@ func (s *Server) handleQueryChangesByFilter(ctx context.Context, request mcp.Cal
 
 	resultBuilder := strings.Builder{}
 	for _, gc := range gerritChanges {
-		resultBuilder.WriteString(fmt.Sprintf("%s: %s\nChanged files: %s\n", gc.URL, gc.Subject, 
-			strings.Join(gc.Paths, "\n")))
-		for fname, diff := range gc.DiffMap {
-			resultBuilder.WriteString(fmt.Sprintf("%s:\n%s\n", fname, diff))
-		}
+		resultBuilder.WriteString(gc.TextResult())
 	}
 	return mcp.NewToolResultText(resultBuilder.String()), nil
 }
@@ -231,11 +233,7 @@ func (s *Server) handleQueryChange(ctx context.Context, request mcp.CallToolRequ
 
 	resultBuilder := strings.Builder{}
 	for _, gc := range gerritChanges {
-		resultBuilder.WriteString(fmt.Sprintf("%s: %s\nChanged files: %s\n", gc.URL, gc.Subject, 
-			strings.Join(gc.Paths, "\n")))
-		for fname, diff := range gc.DiffMap {
-			resultBuilder.WriteString(fmt.Sprintf("%s:\n%s\n", fname, diff))
-		}
+		resultBuilder.WriteString(gc.TextResult())
 	}
 	return mcp.NewToolResultText(resultBuilder.String()), nil
 }

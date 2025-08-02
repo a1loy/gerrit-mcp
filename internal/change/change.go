@@ -28,6 +28,7 @@ type GerritChange struct {
 	DiffSample    []byte
 	DiffMap       map[string]string
 	IsInteresting bool
+	Messages []string
 }
 
 func NewGerritChange(changeInfo *gerrit.ChangeInfo, diffsInfo []*gerrit.DiffInfo, endpointURL string) (GerritChange, error) {
@@ -59,9 +60,15 @@ func NewGerritChange(changeInfo *gerrit.ChangeInfo, diffsInfo []*gerrit.DiffInfo
 		}
 	}
 
+	changeMessages := make([]string, 0)
+	for _, message := range changeInfo.Messages {
+		changeMessages = append(changeMessages, fmt.Sprintf("%s: %s", message.Author.Name, message.Message))
+	}
+
 	return GerritChange{Paths: fpaths, Type: "dummy",
 		Subject: changeInfo.Subject, Project: changeInfo.Project,
 		DiffMap: diffMap,
+		Messages: changeMessages,
 		URL:     extractChangeId(changeInfo.ChangeID, endpointURL)}, nil
 }
 
@@ -156,4 +163,44 @@ func BuildQueryFromURL(reviewURL string) (string, error) {
 		// opt.Query = []string{fmt.Sprintf("change:%d", parts[5])}
 	}
 	return "", fmt.Errorf("invalid review URL: %s (parts: %v)", reviewURL, parts)
+}
+
+func (c * GerritChange) TextResult() string {
+	resultBuilder := strings.Builder{}
+	resultBuilder.WriteString(fmt.Sprintf("%s: %s\n", c.URL, c.Subject))
+	resultBuilder.WriteString(fmt.Sprintf("Changed files: %s\n", strings.Join(c.Paths, "\n")))
+	for fname, diff := range c.DiffMap {
+		resultBuilder.WriteString(fmt.Sprintf("%s:\n%s\n", fname, diff))
+	}
+	// for _, message := range c.Messages {
+	// 	resultBuilder.WriteString(fmt.Sprintf("%s\n", message))
+	// }
+	return resultBuilder.String()
+}
+
+func GetCorrectProjectName(ctx context.Context, gerritClient *gerrit.Client, projectName string, defaultProject string) string {
+	// TODO: query project from gerrit instance
+	projectMapping := map[string]string{
+		"chromium": "chromium/src",
+		"v8": "v8/v8",
+	}
+	knownProjects := make([]string, 0)
+	opt := &gerrit.ProjectOptions{}
+	projects, _, err := gerritClient.Projects.ListProjects(ctx, opt)
+	if err == nil {
+		for _, p := range *projects {
+			knownProjects = append(knownProjects, p.Name)
+		}
+	}
+	for _, p := range knownProjects {
+		if strings.HasPrefix(p, projectName) {
+			return p
+		}
+	}
+	for k, v := range projectMapping {
+		if strings.HasPrefix(k, projectName) || strings.HasPrefix(v, projectName) {
+			return v
+		}
+	}
+	return defaultProject
 }
