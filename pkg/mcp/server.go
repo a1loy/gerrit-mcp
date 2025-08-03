@@ -18,11 +18,11 @@ const (
 	ServerName = "gerrit-mcp"
 	ServerVersion = "0.1.0"
 	DefaultGerritEndpointURL = "https://chromium-review.googlesource.com"
-	PROJECT_QUERY_LIMIT = 10
-	CHANGE_QUERY_DEFAULT_AGE_HOURS = 24
-	CHANGE_QUERY_DEFAULT_PROJECT = "chromium/src"
-	CHANGE_QUERY_DEFAULT_STATUS = "open"
-	CHANGE_QUERY_DEFAULT_LIMIT = -1 // unlimited
+	ProjectQueryLimit = 10
+	ChangeQueryDefaultAgeHours = 24
+	ChangeQueryDefaultProject = "chromium/src"
+	ChangeQueryDefaultStatus = "open"
+	ChangeQueryDefaultLimit = -1 // unlimited
 )
 
 type Server struct {
@@ -139,23 +139,23 @@ func (s *Server) ServeSSE(addr string) error {
 }
 
 func (s *Server) handleQueryChangesByFilter(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	status := mcp.ParseString(request, "status", CHANGE_QUERY_DEFAULT_STATUS)
-	limit := mcp.ParseInt(request, "limit", CHANGE_QUERY_DEFAULT_LIMIT)
-	project := mcp.ParseString(request, "project", CHANGE_QUERY_DEFAULT_PROJECT)
-	age := mcp.ParseInt(request, "age", CHANGE_QUERY_DEFAULT_AGE_HOURS)
+	status := mcp.ParseString(request, "status", ChangeQueryDefaultStatus)
+	limit := mcp.ParseInt(request, "limit", ChangeQueryDefaultLimit)
+	project := mcp.ParseString(request, "project", ChangeQueryDefaultProject)
+	age := mcp.ParseInt(request, "age", ChangeQueryDefaultAgeHours)
 
 	opt := &gerrit.QueryChangeOptions{}
 	queryParts := []string{
 		"status:" + status,
 		// "project:" + project,
 	}
-	if project == CHANGE_QUERY_DEFAULT_PROJECT {
+	if project == ChangeQueryDefaultProject {
 		queryParts = append(queryParts, "project:" + project)
 	} else {
-		queryParts = append(queryParts, "project:" + change.GetCorrectProjectName(ctx, s.gerritClient, project, CHANGE_QUERY_DEFAULT_PROJECT))
+		queryParts = append(queryParts, "project:" + change.GetCorrectProjectName(ctx, s.gerritClient, project, ChangeQueryDefaultProject))
 	}
 	
-	if age != CHANGE_QUERY_DEFAULT_AGE_HOURS {
+	if age != ChangeQueryDefaultAgeHours {
 		queryParts = append(queryParts, fmt.Sprintf("age:%d", age))
 	}
 	opt.Query = []string{strings.Join(queryParts, " ")}
@@ -176,7 +176,7 @@ func (s *Server) handleQueryChangesByFilter(ctx context.Context, request mcp.Cal
 
 	logger.Debugf("extracted %d changes", len(gerritChanges))
 
-	if limit != CHANGE_QUERY_DEFAULT_LIMIT && len(gerritChanges) > limit {
+	if limit != ChangeQueryDefaultLimit && len(gerritChanges) > limit {
 		gerritChanges = gerritChanges[:limit]
 	}
 
@@ -240,7 +240,7 @@ func (s *Server) handleQueryChange(ctx context.Context, request mcp.CallToolRequ
 
 func (s *Server) handleQueryProjects(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	prefix := mcp.ParseString(request, "prefix", "")
-	limit := mcp.ParseInt(request, "limit", PROJECT_QUERY_LIMIT)
+	limit := mcp.ParseInt(request, "limit", ChangeQueryDefaultLimit)
 	opt := &gerrit.ProjectOptions{
 		ProjectBaseOptions: gerrit.ProjectBaseOptions{
 			Limit: limit,
