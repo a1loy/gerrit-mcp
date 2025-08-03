@@ -82,7 +82,6 @@ func BuildGerritChanges(ctx context.Context, gerritClient *gerrit.Client, change
 		}
 		unfilteredFiles, _, rerr := gerritClient.Changes.ListFiles(ctx, curChange.ID, revision, &gerrit.FilesOptions{})
 		if rerr != nil {
-			// panic(rerr)
 			logger.Errorf("%v", rerr)
 			continue
 		}

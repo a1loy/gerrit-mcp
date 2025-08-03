@@ -162,7 +162,7 @@ func (s *Server) handleQueryChangesByFilter(ctx context.Context, request mcp.Cal
 	opt.Limit = limit
 	changes, _, err := s.gerritClient.Changes.QueryChanges(ctx, opt)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("failed to query changes: %w", err)
 	}
 
 	if len(*changes) == 0 {
@@ -218,7 +218,7 @@ func (s *Server) handleQueryChange(ctx context.Context, request mcp.CallToolRequ
 
 	changes, _, err := s.gerritClient.Changes.QueryChanges(ctx, opt)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("failed to query changes: %w", err)
 	}
 	if len(*changes) == 0 {
 		return nil, fmt.Errorf("no change found for trackID %d", trackID)
