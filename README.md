@@ -1,6 +1,6 @@
 # Gerrit MCP Server
 
-An MCP (Model Context Protocol) server that provides access to the choosen Gerrit instance.
+An MCP (Model Context Protocol) server that provides access to the chosen Gerrit instance.
 
 This project implements an SSE-based MCP server that provides tools for:
 
