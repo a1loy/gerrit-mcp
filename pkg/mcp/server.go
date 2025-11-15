@@ -2,32 +2,37 @@ package mcp
 
 import (
 	// "gerrit-mcp/internal/gerrit"
-	"gerrit-mcp/internal/change"
-	"github.com/andygrunwald/go-gerrit"
-	"gerrit-mcp/internal/logger"
-	"github.com/mark3labs/mcp-go/server"
-	"github.com/mark3labs/mcp-go/mcp"
 	"context"
-	"strings"
-	"fmt"
 	"encoding/json"
+	"fmt"
+	"gerrit-mcp/internal/change"
+	"gerrit-mcp/internal/logger"
+	"gerrit-mcp/internal/middlewares"
 	"net/url"
+	"strings"
+
+	"github.com/andygrunwald/go-gerrit"
+	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/mark3labs/mcp-go/server"
+	mcpserver "github.com/mark3labs/mcp-go/server"
 )
 
 const (
-	ServerName = "gerrit-mcp"
-	ServerVersion = "0.1.0"
-	DefaultGerritEndpointURL = "https://chromium-review.googlesource.com"
-	ProjectQueryLimit = 10
+	ServerName                 = "gerrit-mcp"
+	ServerVersion              = "0.1.0"
+	DefaultGerritEndpointURL   = "https://chromium-review.googlesource.com"
+	ProjectQueryLimit          = 10
 	ChangeQueryDefaultAgeHours = 24
-	ChangeQueryDefaultProject = "chromium/src"
-	ChangeQueryDefaultStatus = "open"
-	ChangeQueryDefaultLimit = -1 // unlimited
+	ChangeQueryDefaultProject  = "chromium/src"
+	ChangeQueryDefaultStatus   = "open"
+	ChangeQueryDefaultLimit    = -1 // unlimited
+	DefaultHeaderAuthName      = "Authorization"
 )
 
 type Server struct {
-	mcpServer *server.MCPServer
+	mcpServer    *mcpserver.MCPServer
 	gerritClient *gerrit.Client
+	config       Config
 }
 
 func NewServer(opts ...ServerOption) *Server {
@@ -44,7 +49,10 @@ func NewServer(opts ...ServerOption) *Server {
 		opt(s)
 	}
 
-	mcpServer := server.NewMCPServer(ServerName, ServerVersion)
+	authMiddleware := NewAuthMiddleware(&middlewares.SimpleTokenValidator{HeaderName: s.config.AuthHeaderName, Secret: s.config.AuthSecret})
+
+	mcpServer := mcpserver.NewMCPServer(ServerName, ServerVersion,
+		mcpserver.WithToolHandlerMiddleware(authMiddleware.ToolMiddleware()))
 
 	mcpServer.AddTool(
 		mcp.NewToolWithRawSchema(
@@ -132,6 +140,12 @@ func WithGerritClient(client *gerrit.Client) ServerOption {
 	}
 }
 
+func WithConfig(cfg Config) ServerOption {
+	return func(s *Server) {
+		s.config = cfg
+	}
+}
+
 func (s *Server) ServeSSE(addr string) error {
 	logger.Debugf("Starting MCP server (SSE) on %s", addr)
 	sseServer := server.NewSSEServer(s.mcpServer)
@@ -150,13 +164,13 @@ func (s *Server) handleQueryChangesByFilter(ctx context.Context, request mcp.Cal
 		// "project:" + project,
 	}
 	if project == ChangeQueryDefaultProject {
-		queryParts = append(queryParts, "project:" + project)
+		queryParts = append(queryParts, "project:"+project)
 	} else {
-		queryParts = append(queryParts, "project:" + change.GetCorrectProjectName(ctx, s.gerritClient, project, ChangeQueryDefaultProject))
+		queryParts = append(queryParts, "project:"+change.GetCorrectProjectName(ctx, s.gerritClient, project, ChangeQueryDefaultProject))
 	}
-	
+
 	if age != ChangeQueryDefaultAgeHours {
-		queryParts = append(queryParts, fmt.Sprintf("age:%d", age))
+		queryParts = append(queryParts, fmt.Sprintf("age:%dh", age))
 	}
 	opt.Query = []string{strings.Join(queryParts, " ")}
 	opt.Limit = limit
@@ -244,7 +258,7 @@ func (s *Server) handleQueryProjects(ctx context.Context, request mcp.CallToolRe
 	opt := &gerrit.ProjectOptions{
 		ProjectBaseOptions: gerrit.ProjectBaseOptions{
 			Limit: limit,
-		},	
+		},
 		Description: true,
 	}
 	if prefix != "" {
