@@ -146,10 +146,22 @@ func WithConfig(cfg Config) ServerOption {
 	}
 }
 
-func (s *Server) ServeSSE(addr string) error {
+func (s *Server) Serve(addr string) error {
+	if s.config.UseSSE {
+		return s.serveSSE(addr)
+	}
+	return s.serverStreamableHTTP(addr)
+}
+
+func (s *Server) serveSSE(addr string) error {
 	logger.Debugf("Starting MCP server (SSE) on %s", addr)
 	sseServer := server.NewSSEServer(s.mcpServer)
 	return sseServer.Start(addr)
+}
+
+func (s *Server) serverStreamableHTTP(addr string) error {
+	logger.Debugf("Starting MCP server (Streamable HTTP Server) on %s", addr)
+	return server.NewStreamableHTTPServer(s.mcpServer).Start(addr)
 }
 
 func (s *Server) handleQueryChangesByFilter(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {

@@ -9,6 +9,7 @@ import (
 type Config struct {
 	AuthHeaderName string `yaml:"AuthHeaderName"`
 	AuthSecret     string `yaml:"AuthSecret"`
+	UseSSE         bool   `yaml:"UseSSE"`
 }
 
 func NewConfigFromFile(configPath string) (Config, error) {

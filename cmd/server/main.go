@@ -18,11 +18,13 @@ const (
 	DEFAULT_PORT             = "8080"
 	DEFAULT_GERRIT_INSTANCE  = "https://chromium-review.googlesource.com"
 	DEFAULT_AUTH_HEADER_NAME = "Authorization"
+	DEFAULT_USE_SSE          = false
 )
 
 func main() {
 	port := flag.String("port", DEFAULT_PORT, "Port to listen on")
 	addr := flag.String("addr", DEFAULT_HOST, "Address to listen on")
+	sse := flag.Bool("sse", DEFAULT_USE_SSE, "Use SSE instead of streamable HTTP")
 	gerritInstance := flag.String("gerrit-instance", DEFAULT_GERRIT_INSTANCE, "Gerrit instance URL")
 	withAuth := flag.String("with-auth", "", "Use authentication")
 	flag.Parse()
@@ -33,6 +35,7 @@ func main() {
 	ctx := context.Background()
 	gerritClient, err := gerrit.NewClient(ctx, *gerritInstance, nil)
 	authMode := *withAuth
+	useSSE := *sse
 	switch authMode {
 	case "cookie":
 		cookieName := os.Getenv("GERRIT_COOKIE_NAME")
@@ -68,6 +71,7 @@ func main() {
 		mcp.WithConfig(mcp.Config{
 			AuthHeaderName: DEFAULT_AUTH_HEADER_NAME,
 			AuthSecret:     os.Getenv("BEARER_TOKEN"),
+			UseSSE:         useSSE,
 		}),
 	)
 	sigChan := make(chan os.Signal, 1)
@@ -76,7 +80,7 @@ func main() {
 	// Start server in a goroutine
 	errChan := make(chan error, 1)
 	go func() {
-		errChan <- mcpServer.ServeSSE(host)
+		errChan <- mcpServer.Serve(host)
 	}()
 
 	// Wait for signal or error

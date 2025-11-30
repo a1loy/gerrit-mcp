@@ -17,3 +17,7 @@ This project implements an SSE-based MCP server that provides tools for:
 2) Run on localhost:8080 with basic auth credentials for gerrit:
 
 ``GERRIT_USERNAME=john GERRIT_PASSWORD=johnP@ssword ./gerrit-mcp -port 8080 -addr 127.0.0.1 -with-auth=basic``
+
+3) Run with MCP with authentication via Bearer header:
+
+`` BEARER_TOKEN=your_secret_bearer_value ./gerrit-mcp -port 8080 -addr 127.0.0.1 ``
